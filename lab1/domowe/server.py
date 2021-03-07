@@ -1,3 +1,10 @@
+"""
+IMPORTANT NOTE!
+
+In general Python is thread safe because of GIL, 
+as long as you use ATOMIC operations, such as append, remove etc.
+"""
+
 import socket
 import threading
 
@@ -15,15 +22,15 @@ udp_server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp_server.bind(ADDR)
 
 # TCP
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.bind(ADDR)
+tcp_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+tcp_server.bind(ADDR)
 
 clients = {}
 
 
 def send(sender, header, msg, udp=False):
     for nick, client in clients.items():
-        socket, addr = client
+        socket, _ = client
         if nick != sender:
             try:
                 socket.send(header.encode(FORMAT))
@@ -48,21 +55,12 @@ def handle_client(conn, addr):
     # get nickname, add client
     nickname, _ = recv()
     clients[nickname] = conn, addr
-    print(f"[NEW CONNECTION] {nickname} connected from {addr}")
+    print(f"[NEW CONNECTION] {nickname} connected at {addr}")
 
     while True:
-        # this line blocks, waits until it receives a msg from client
-        # we need to know how many bites the message contains
-        # for that we first send a constant length HEADER that tells us how long
-        # the following message is going to be
         msg, header = recv()
+        
         if msg == DISCONNECT_MESSAGE:
-            """
-            IMPORTANT NOTE!!!!!1
-            
-            In general Python is thread safe because of GIL, 
-            as long as you use ATOMIC operations, such as append, remove etc.
-            """
             clients.pop(nickname)
             break
 
@@ -89,24 +87,24 @@ def start():
     # start UDP
     threading.Thread(target=handle_udp, daemon=True).start()
     
-    server.listen()
+    tcp_server.listen()
     print(f"[LISTENING] Server is listening on {SERVER}")
     while True:
         # this line blocks, meaning it waits for a connection
-        conn, addr = server.accept()
+        conn, addr = tcp_server.accept()
         
         # when new connection appears execute handle_client in new thread
         threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
         print(f"[ACTIVE CONNECTIONS] {threading.activeCount() - 2}")
 
 
-print("[STARTING] server is starting")
+print("[STARTING] Server is starting")
 try:
     start()
 except:
     for _, client in clients.items():
         client[0].close()
-    server.close()
+    tcp_server.close()
     udp_server.close()
     print("[SHUTDOWN] Server shutdown")
         

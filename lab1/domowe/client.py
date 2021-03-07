@@ -31,6 +31,7 @@ tcp_client.connect(ADDR)
 udp_client = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
 udp_client.bind(tcp_client.getsockname())
 
+# set nickname
 nickname = input("Enter nickname: ")
 prompt = nickname + ">  "
 send(nickname)
@@ -45,9 +46,11 @@ print(
 
 try:
     while True:
+        # check for sockets that are ready to read
         read_sockets, _ , _ = select([sys.stdin, tcp_client, udp_client], [], [])
         
         for sock in read_sockets:
+            # receive TCP
             if sock == tcp_client:
                 msg_length = tcp_client.recv(HEADER).decode(ENCODING)
 
@@ -56,18 +59,24 @@ try:
 
                     msg = tcp_client.recv(msg_length).decode(ENCODING)
                     print(msg)
-                    
+            
+            # receive UDP
             elif sock == udp_client:
                 msg, addr = udp_client.recvfrom(2048)
                 print(msg.decode(ENCODING))
                 
+            # read STDIN
             else:
                 msg = sys.stdin.readline().strip()
+                    
+                # send as UDP
                 if msg.startswith("!u"):
                     msg = sys.stdin.read()
                     msg = prompt + "\n" + msg
                     udp_client.sendto(msg.encode(ENCODING), ADDR)
                     print()
+                
+                # send as TCP
                 else:
                     msg = prompt + msg
                     send(msg)
@@ -75,9 +84,10 @@ try:
                         break
                 print(msg)
                 
-except KeyboardInterrupt:
-    send(DISCONNECT_MESSAGE)
-    tcp_client.close()
-    udp_client.close()
-except BrokenPipeError:
-    print("[ERROR] Connection to server lost")
+except:
+    try:
+        send(DISCONNECT_MESSAGE)
+        tcp_client.close()
+        udp_client.close()
+    except BrokenPipeError:
+        print("[ERROR] Connection to server lost")
