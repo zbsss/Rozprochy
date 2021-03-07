@@ -6,26 +6,32 @@ HEADER = 64
 FORMAT  = "utf-8"
 DISCONNECT_MESSAGE = "!q"
 
-PORT = 9008
+PORT = 9009
 SERVER = "127.0.0.1" 
 ADDR = (SERVER, PORT)
 
+# UDP
+udp_server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+udp_server.bind(ADDR)
+
+# TCP
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(ADDR)
 
 clients = {}
 
 
-def send(sender, header, msg):
+def send(sender, header, msg, udp=False):
     for nick, client in clients.items():
+        socket, addr = client
         if nick != sender:
             try:
-                client.send(header.encode(FORMAT))
-                client.send(msg.encode(FORMAT))
+                socket.send(header.encode(FORMAT))
+                socket.send(msg.encode(FORMAT))
             except BrokenPipeError:
                 print(f"[ERROR] {nick} disconnected unexpectedly")
-                client.close()
-                clients.pop(nick)
+                socket.close()
+                socket.pop(nick)
                 continue
 
 
@@ -36,12 +42,12 @@ def handle_client(conn, addr):
         if header:
             msg_length = int(header)
 
-            msg = conn.recv(msg_length).decode(FORMAT), header
-            return msg
+            msg = conn.recv(msg_length).decode(FORMAT)
+            return msg, header
 
     # get nickname, add client
     nickname, _ = recv()
-    clients[nickname] = conn
+    clients[nickname] = conn, addr
     print(f"[NEW CONNECTION] {nickname} connected from {addr}")
 
     while True:
@@ -67,17 +73,31 @@ def handle_client(conn, addr):
     conn.close()
 
 
+def handle_udp():
+    while True:
+        msg, addr = udp_server.recvfrom(2048)
+        print(f"[UDP][{addr}] {msg.decode(FORMAT)}")
+        
+        for nick, client in clients.items():
+            _, client_addr = client
+            
+            if addr != client_addr:
+                udp_server.sendto(msg, client_addr)
+         
+
 def start():
+    # start UDP
+    threading.Thread(target=handle_udp, daemon=True).start()
+    
     server.listen()
     print(f"[LISTENING] Server is listening on {SERVER}")
     while True:
         # this line blocks, meaning it waits for a connection
         conn, addr = server.accept()
-
+        
         # when new connection appears execute handle_client in new thread
-        thread = threading.Thread(target=handle_client, args=(conn, addr), daemon=True)
-        thread.start()
-        print(f"[ACTIVE CONNECTIONS] {threading.activeCount() - 1}")
+        threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
+        print(f"[ACTIVE CONNECTIONS] {threading.activeCount() - 2}")
 
 
 print("[STARTING] server is starting")
@@ -85,7 +105,8 @@ try:
     start()
 except:
     for _, client in clients.items():
-        client.close()
+        client[0].close()
     server.close()
+    udp_server.close()
     print("[SHUTDOWN] Server shutdown")
         
